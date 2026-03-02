@@ -55,6 +55,8 @@ Before computing, research the correct values for the tax year being filed:
 
 Use IRS.gov and FTB.ca.gov as authoritative sources. Do NOT reuse prior-year amounts.
 
+> **Important**: `references/tax-computation.md` contains year-agnostic **formulas and algorithms only** (QDCG worksheet, capital loss rules). It does NOT contain bracket amounts, standard deductions, or thresholds. You must look those up fresh for every tax year.
+
 ### Step 4: Compute Federal Return
 
 Follow this sequence:
@@ -65,13 +67,14 @@ Follow this sequence:
 4. **Deductions**: Standard deduction or Schedule A → Line 12-14
 5. **Taxable Income**: AGI minus deductions → Line 15
 6. **Tax Computation**:
-   - If qualified dividends or capital gains exist: use QDCG Tax Worksheet
+   - If qualified dividends or capital gains exist: use QDCG Tax Worksheet (see `references/tax-computation.md`)
    - Otherwise: use tax tables or bracket computation
 7. **Credits**: Child tax credit, education, etc. → Lines 19-21
 8. **Other Taxes**: SE tax, penalty, etc. → Lines 23
 9. **Total Tax**: Line 24
 10. **Payments**: W-2 withholding (25a), estimated payments (26), credits (27-31) → Line 33
 11. **Refund/Owed**: Line 34-37 (overpaid/refund) or Line 37 (amount owed)
+12. **Direct Deposit**: If refund, collect routing number, account number, and account type (checking/savings) for Lines 35b-d
 
 ### Step 5: Compute Capital Gains (if applicable)
 
@@ -94,7 +97,15 @@ If the user has stock/option sales:
 
 ### Step 7: Download Blank PDF Forms
 
-Download the correct tax year forms. **Critical**: Use `/irs-prior/` for non-current-year forms.
+Use the download helper script:
+
+```bash
+python scripts/download_forms.py YEAR OUTPUT_DIR --state CA
+```
+
+This downloads f1040, f8949, f1040sd from IRS and the 540 from FTB, validates each is a real PDF, and saves as `*_blank.pdf`.
+
+If the script fails, download manually. **Critical**: Use `/irs-prior/` for non-current-year forms.
 
 ```
 # Federal forms - from IRS (replace YEAR with e.g. 2025)
@@ -111,61 +122,61 @@ https://www.ftb.ca.gov/forms/YEAR/YEAR-540.pdf
 
 ### Step 8: Discover Field Names & Fill PDF Forms
 
-**Every tax year, you MUST discover field names fresh.** Field names and mappings can change between years. Do not assume prior-year field names are correct.
+Use the reference field mappings in `references/` as a starting point — they were created from 2024 forms and are generally stable year-to-year. **Spot-check ~5 key fields** (name, SSN, AGI, tax, refund) using `discover_fields.py`:
 
-Use `scripts/fill_forms.py` which provides the `fill_pdf()` function. Write a year-specific fill script that:
-1. Discovers field names for each downloaded form (see below)
-2. Defines field name → value dictionaries for each form
-3. Defines checkbox dictionaries
-4. Calls `fill_pdf()` for each form
+```bash
+# IRS forms (XFA-based)
+python scripts/discover_fields.py f1040_blank.pdf --xfa-only --search "first name"
+python scripts/discover_fields.py f1040_blank.pdf --xfa-only --search "adjusted gross"
 
-#### Discovering Field Names
-
-Different forms require different PDF libraries for field discovery.
-
-**IRS forms (1040, Schedule D, 8949)** — try XFA first: Use **PyMuPDF (fitz)** to extract the XFA template stream. The AcroForm fields typically have NO `/TU` tooltips — field names like `f1_32[0]` are opaque. The XFA template XML contains `<assist><speak>` elements with exact human-readable descriptions for every field.
-
-```python
-import fitz, xml.etree.ElementTree as ET
-doc = fitz.open("form.pdf")
-for i in range(1, doc.xref_length()):
-    try:
-        stream = doc.xref_stream(i)
-        if stream and b'<template' in stream:
-            root = ET.fromstring(stream.decode('utf-8', errors='replace'))
-            for field in root.iter():
-                if field.tag.endswith('}field'):
-                    name = field.get('name', '')
-                    for child in field.iter():
-                        if child.tag.endswith('}speak'):
-                            print(f"{name}: {child.text}")
-                            break
-            break
-    except: continue
+# CA Form 540 (AcroForm with /TU tooltips)
+python scripts/discover_fields.py ca540_blank.pdf --search "AGI"
 ```
 
-**CA Form 540** — use pypdf `/TU` tooltips:
+If the spot-checked fields match the references, trust the rest. If they don't match, do a full re-discovery.
 
-```python
-from pypdf import PdfReader
-reader = PdfReader("ca540.pdf")
-for page in reader.pages:
-    for annot in page.get("/Annots", []):
-        obj = annot.get_object()
-        print(f"{obj.get('/T')}: {obj.get('/TU')}")
+#### Writing the Fill Script
+
+Use `scripts/fill_forms.py` which provides:
+- **`add_suffix(d)`** — Appends `[0]` to text field keys (skips checkbox keys starting with `c`). Required for all IRS forms.
+- **`fill_irs_pdf(input, output, fields, checkboxes)`** — For IRS forms. Matches checkboxes by `/T` value directly on annotations (not full parent-chain path).
+- **`fill_pdf(input, output, fields, checkboxes)`** — For CA and other forms. Matches checkboxes/radio buttons by walking the `/Parent` chain and inspecting `/AP/N` keys.
+
+Write a year-specific fill script (e.g. `fill_2025.py`) that:
+1. Defines field name → value dictionaries for each form
+2. Defines checkbox dictionaries
+3. Calls `fill_irs_pdf()` (with `add_suffix()`) for IRS forms
+4. Calls `fill_pdf()` for CA forms
+
+#### Full Field Discovery (when references don't match)
+
+```bash
+# Full discovery with all details
+python scripts/discover_fields.py form.pdf
+
+# Filter by page or field type
+python scripts/discover_fields.py form.pdf --page 1 --type Btn
 ```
 
-**When neither XFA nor /TU is available**: List all field names, positions (`/Rect`), and types; map by visual layout; use trial fills and manual verification.
-
-For **filling** all forms, always use pypdf via `fill_forms.py`.
+Different forms use different PDF metadata:
+- **IRS forms**: XFA `<assist><speak>` elements (use `--xfa-only`)
+- **CA Form 540**: AcroForm `/TU` tooltips (automatic with default mode)
+- **Fallback**: Map by `/Rect` position and trial fills
 
 ### Step 9: Verify and Fix
 
-After filling:
-1. Read back field values programmatically to confirm they were written
-2. Cross-check key numbers: AGI, taxable income, tax, refund
-3. Fix any misaligned fields by re-examining field names
-4. Re-run the fill script after corrections
+After filling, use the verification script:
+
+```bash
+python scripts/verify_filled.py filled.pdf expected.json
+```
+
+Where `expected.json` contains `text_fields`, `checkboxes`, and `radio_buttons` sections with expected values. The script reports OK/MISSING/MISMATCH for each field and exits with code 1 on any failure.
+
+Also:
+1. Cross-check key numbers: AGI, taxable income, tax, refund
+2. Fix any misaligned fields by re-examining field names with `discover_fields.py`
+3. Re-run the fill script after corrections
 
 ### Step 10: Present Results & Filing Instructions
 
@@ -209,6 +220,13 @@ If the user OWES taxes (not getting a refund), make this **prominent and unmissa
 - **California**: Pay via FTB Web Pay (ftb.ca.gov), or mail a check with the return
 - **Deadline**: April 15 (or extension deadline). Late payments incur penalties + interest.
 - **Filing an extension extends the filing deadline but NOT the payment deadline.** Taxes owed are still due April 15.
+
+#### Refund Delivery — Recommend Direct Deposit
+If the user is getting a refund and hasn't provided direct deposit info, **ask if they want to add it**. Direct deposit is much faster (~21 days vs 6+ weeks by mail).
+- Federal 1040: Lines 35b (routing), 35c (account type), 35d (account number)
+- CA 540: Lines 116-118 (routing, account type, account number)
+
+If they decline, explain that without direct deposit their refund will arrive by **paper check in the mail** (6+ weeks). Note: starting with 2025 returns (filed in 2026), the IRS is phasing out paper checks — refunds without direct deposit info may be delayed while the IRS requests banking details.
 
 #### Filing Options
 - E-file options (IRS Free File, CalFile, etc.)
