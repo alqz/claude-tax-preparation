@@ -122,18 +122,17 @@ https://www.ftb.ca.gov/forms/YEAR/YEAR-540.pdf
 
 ### Step 8: Discover Field Names & Fill PDF Forms
 
-Use the reference field mappings in `references/` as a starting point — they were created from 2024 forms and are generally stable year-to-year. **Spot-check ~5 key fields** (name, SSN, AGI, tax, refund) using `discover_fields.py`:
+**Every tax year, discover field names fresh** using `discover_fields.py`:
 
 ```bash
-# IRS forms (XFA-based)
+# IRS forms (XFA-based) — use --xfa-only for human-readable descriptions
+python scripts/discover_fields.py f1040_blank.pdf --xfa-only
 python scripts/discover_fields.py f1040_blank.pdf --xfa-only --search "first name"
-python scripts/discover_fields.py f1040_blank.pdf --xfa-only --search "adjusted gross"
 
 # CA Form 540 (AcroForm with /TU tooltips)
-python scripts/discover_fields.py ca540_blank.pdf --search "AGI"
+python scripts/discover_fields.py ca540_blank.pdf
+python scripts/discover_fields.py ca540_blank.pdf --search "adjusted gross"
 ```
-
-If the spot-checked fields match the references, trust the rest. If they don't match, do a full re-discovery.
 
 #### Writing the Fill Script
 
@@ -148,12 +147,9 @@ Write a year-specific fill script (e.g. `fill_2025.py`) that:
 3. Calls `fill_irs_pdf()` (with `add_suffix()`) for IRS forms
 4. Calls `fill_pdf()` for CA forms
 
-#### Full Field Discovery (when references don't match)
+#### Filtering Discovery Results
 
 ```bash
-# Full discovery with all details
-python scripts/discover_fields.py form.pdf
-
 # Filter by page or field type
 python scripts/discover_fields.py form.pdf --page 1 --type Btn
 ```
