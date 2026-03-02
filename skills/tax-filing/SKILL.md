@@ -117,6 +117,9 @@ Download each form needed and save as `*_blank.pdf` in the working directory. Ve
 **Every tax year, discover field names fresh** using `discover_fields.py`:
 
 ```bash
+# Discover all forms at once (accepts multiple PDFs)
+python scripts/discover_fields.py f1040_blank.pdf f8949_blank.pdf f1040sd_blank.pdf ca540_blank.pdf
+
 # IRS forms (XFA-based) — use --xfa-only for human-readable descriptions
 python scripts/discover_fields.py f1040_blank.pdf --xfa-only
 python scripts/discover_fields.py f1040_blank.pdf --xfa-only --search "first name"
@@ -124,19 +127,27 @@ python scripts/discover_fields.py f1040_blank.pdf --xfa-only --search "first nam
 # CA Form 540 (AcroForm with /TU tooltips)
 python scripts/discover_fields.py ca540_blank.pdf
 python scripts/discover_fields.py ca540_blank.pdf --search "adjusted gross"
+
+# JSON output for programmatic consumption
+python scripts/discover_fields.py f1040_blank.pdf --json --xfa-only > f1040_fields.json
 ```
+
+For IRS XFA forms, discovery also cross-references AcroForm annotations to report
+radio button `/AP/N` options (e.g. which value = "Single" vs "MFJ" for filing status).
+These show up as `radio: /1=c1_3[0], /2=c1_3[1]` in text mode, or as `radio_options`
+in JSON mode.
 
 #### Writing the Fill Script
 
 Use `scripts/fill_forms.py` which provides:
 - **`add_suffix(d)`** — Appends `[0]` to text field keys (skips checkbox keys starting with `c`). Required for all IRS forms.
-- **`fill_irs_pdf(input, output, fields, checkboxes)`** — For IRS forms. Matches checkboxes by `/T` value directly on annotations (not full parent-chain path).
+- **`fill_irs_pdf(input, output, fields, checkboxes, radio_values)`** — For IRS forms. Matches checkboxes by `/T` value directly. The `radio_values` parameter handles IRS exclGroup fields (filing status, yes/no questions, etc.) where multiple annotations share a `/T` prefix with different `/AP/N` keys. Example: `radio_values={"c1_3": "/1"}` selects "Single".
 - **`fill_pdf(input, output, fields, checkboxes)`** — For CA and other forms. Matches checkboxes/radio buttons by walking the `/Parent` chain and inspecting `/AP/N` keys.
 
 Write a year-specific fill script (e.g. `fill_2025.py`) that:
 1. Defines field name → value dictionaries for each form
-2. Defines checkbox dictionaries
-3. Calls `fill_irs_pdf()` (with `add_suffix()`) for IRS forms
+2. Defines checkbox and radio dictionaries
+3. Calls `fill_irs_pdf()` (with `add_suffix()`) for IRS forms — pass `radio_values` for filing status, digital assets, checking/savings, etc.
 4. Calls `fill_pdf()` for CA forms
 
 #### Filtering Discovery Results
@@ -144,10 +155,13 @@ Write a year-specific fill script (e.g. `fill_2025.py`) that:
 ```bash
 # Filter by page or field type
 python scripts/discover_fields.py form.pdf --page 1 --type Btn
+
+# JSON output — useful for programmatic field mapping
+python scripts/discover_fields.py form.pdf --json > fields.json
 ```
 
 Different forms use different PDF metadata:
-- **IRS forms**: XFA `<assist><speak>` elements (use `--xfa-only`)
+- **IRS forms**: XFA `<assist><speak>` elements (use `--xfa-only`). Radio button `/AP/N` options are cross-referenced from AcroForm annotations automatically.
 - **CA Form 540**: AcroForm `/TU` tooltips (automatic with default mode)
 
 **⚠️ HARD FAIL**: If neither method produces human-readable field descriptions, **STOP IMMEDIATELY**. Do not fill the form. Do not guess from field names or positions. Tell the user that field discovery failed and needs debugging. Filling with unmapped opaque field names like `f1_32[0]` will produce WRONG values in WRONG fields — this is worse than not filling at all.
@@ -243,7 +257,7 @@ If they decline, explain that without direct deposit their refund will arrive by
 - **Checkboxes**: Set both `/V` and `/AS` to `/1` (checked) or `/Off` (unchecked)
 - **Field names**: Walk the `/Parent` chain to build fully-qualified field paths
 - **IRS field name `[0]` suffix**: IRS XFA-based forms have `/T` values like `f1_04[0]` (with `[0]` suffix). When using `update_page_form_field_values`, field keys MUST include the `[0]` suffix to match. Use a helper like `add_suffix()` to append `[0]` to all text field keys.
-- **IRS checkbox matching**: The `fill_forms.py` `_get_full_name()` builds deeply nested paths (e.g. `topmostSubform[0].Page1[0].c1_3[0]`) that won't match short keys. For IRS forms, match checkboxes by `/T` value directly on each annotation instead of using the full path. Write a custom `fill_irs_pdf()` function that does this.
+- **IRS checkbox matching**: `fill_irs_pdf()` matches checkboxes by `/T` value directly (not full parent-chain path). For simple on/off checkboxes, use `checkbox_values`. For radio-button-style exclGroups (filing status, yes/no questions, checking/savings), use `radio_values` with a `/T` prefix and the target `/AP/N` key value. Run `discover_fields.py --xfa-only` to see radio options.
 
 ### IRS Form 1040 (historically stable field patterns)
 - First few fields (e.g. `f1_01`, `f1_02`, `f1_03`) are often **fiscal year header fields**, NOT name fields — always verify via XFA discovery

@@ -12,7 +12,9 @@ Usage:
     # IRS forms (1040, 8949, Schedule D) — matches checkboxes by /T value
     fields = add_suffix({"f1_04": "Robert", "f1_05": "Balian"})
     fill_irs_pdf("f1040_blank.pdf", "f1040_filled.pdf",
-                 fields, {"c1_3[0]": True})
+                 fields,
+                 checkbox_values={"c1_1[0]": True},
+                 radio_values={"c1_3": "/1", "c1_5": "/2"})
 """
 
 from pypdf import PdfReader, PdfWriter
@@ -116,7 +118,8 @@ def fill_pdf(input_path, output_path, field_values, checkbox_values=None):
     print(f"  Written: {output_path}")
 
 
-def fill_irs_pdf(input_path, output_path, field_values, checkbox_values=None):
+def fill_irs_pdf(input_path, output_path, field_values,
+                 checkbox_values=None, radio_values=None):
     """Fill IRS PDF forms, matching checkboxes by /T value directly.
 
     IRS forms have deeply nested XFA parent chains that produce paths like
@@ -130,6 +133,12 @@ def fill_irs_pdf(input_path, output_path, field_values, checkbox_values=None):
             the [0] suffix (use add_suffix() to add it)
         checkbox_values: Dict of {field_t_value: bool} — keys are the /T value
             on the annotation (e.g., "c1_3[0]" not the full path)
+        radio_values: Dict of {t_prefix: ap_n_value} for IRS radio-button-style
+            exclGroups. Multiple annotations share a /T prefix (e.g. "c1_3")
+            with suffixes like [0], [1], [2]. Each has different /AP/N keys.
+            The annotation whose /AP/N contains the target value gets selected;
+            all others in the group get set to /Off.
+            Example: {"c1_3": "/1"} selects "Single" filing status.
     """
     reader = PdfReader(input_path)
     writer = PdfWriter()
@@ -143,7 +152,7 @@ def fill_irs_pdf(input_path, output_path, field_values, checkbox_values=None):
             page, field_values, auto_regenerate=False
         )
 
-    # Handle checkboxes — match by /T value directly
+    # Handle simple checkboxes — match by /T value directly
     if checkbox_values:
         for page in writer.pages:
             annots = page.get("/Annots")
@@ -154,6 +163,30 @@ def fill_irs_pdf(input_path, output_path, field_values, checkbox_values=None):
                 t = str(annot.get("/T", ""))
                 if t in checkbox_values:
                     _set_check_value(annot, checkbox_values[t])
+
+    # Handle radio buttons — match by /T prefix and /AP/N value
+    if radio_values:
+        for page in writer.pages:
+            annots = page.get("/Annots")
+            if not annots:
+                continue
+            for annot_ref in annots:
+                annot = annot_ref.get_object()
+                t = str(annot.get("/T", ""))
+                for prefix, target in radio_values.items():
+                    if t.startswith(prefix + "[") or t == prefix:
+                        ap = annot.get("/AP", {})
+                        n_keys = list(ap.get("/N", {}).keys()) if "/N" in ap else []
+                        if target in n_keys:
+                            annot.update({
+                                NameObject("/V"): NameObject(target),
+                                NameObject("/AS"): NameObject(target),
+                            })
+                        else:
+                            annot.update({
+                                NameObject("/AS"): NameObject("/Off"),
+                            })
+                        break
 
     _set_need_appearances(writer)
     writer.write(output_path)
