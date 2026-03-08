@@ -103,6 +103,10 @@ Save to `work/computations.txt`.
 6. Payments (withholding, estimated) → Refund/Owed
 7. If refund: collect direct deposit info (routing, account, type)
 
+**Hard tax rules (do not skip):**
+- Student loan interest deduction: if either spouse is claimable as a dependent, allowed deduction is **$0**.
+- Self-employment tax: compute SS and Medicare components separately from Schedule SE earnings, then sum (avoid one-step rounding drift).
+
 Save all line values to `work/computations.txt`.
 
 ### Step 5: Compute Capital Gains (if applicable)
