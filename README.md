@@ -1,23 +1,49 @@
-# Tax Filing Skill for Claude Code
+# Tax Preparation Skill for Claude
 
-This Skill helps Claude turn a folder of tax documents into a mostly-complete filing workflow: read the source docs, compute the return, fill the forms, and hand back a clear summary of what to review before filing.
+This Skill helps Claude prepare your tax return: read the source docs, compute the return, fill the official PDF forms, and hand back a clear summary of what to review before you file.
+
+Works in both **Claude Code** and **Claude.ai**.
 
 ## What It Does
 
 - Reads W-2s, 1099s, brokerage statements, and prior-year returns
-- Asks the missing filing questions Claude needs to finish the return
+- Asks the questions Claude needs to finish the return
 - Computes federal and state tax results, including capital gains and carryovers
 - Downloads official blank PDF forms and fills them programmatically
 - Verifies outputs and returns a human-friendly summary of refunds, forms, and next steps
 
 ## Installation
 
-In Claude Code:
+### Claude Code
 
 ```
-/plugin marketplace add alqz/claude-tax-filing
-/plugin install tax-filing
+/plugin marketplace add alqz/claude-tax-preparation
+/plugin install tax-preparation
 ```
+
+### Claude.ai
+
+1. Download `tax-preparation-cloud.skill` from the [latest release](https://github.com/alqz/claude-tax-preparation/releases).
+2. Go to **Settings > Skills** and upload the `.skill` file.
+
+Then start a new conversation and say something like:
+
+```text
+Help me do my taxes.
+```
+
+Claude will ask you to upload your tax documents (W-2s, 1099s, etc.) directly in the chat. It will also ask you to download and upload the blank IRS/state forms it needs to fill — it gives you the exact URLs.
+
+### Differences Between Versions
+
+The tax computation logic is identical. The differences are purely about how Claude interacts with the environment:
+
+| | Claude Code (`/tax-preparation`) | Claude.ai (`/tax-preparation-cloud`) |
+|---|---|---|
+| **Tax documents** | Reads from your local filesystem | You upload them in the chat |
+| **Blank IRS forms** | Claude downloads them directly | You download and upload them (Claude gives you the URLs) |
+| **Filled forms** | Saved to `output/` in your project | Downloadable from the chat |
+| **Web lookups** | CLI-based | Uses built-in web search tools |
 
 ## What It Looks Like
 
@@ -29,7 +55,7 @@ Claude asks the follow-up questions needed to finish the return:
 
 ![Filing questions UI](docs/images/filing-questions.png)
 
-It works through the filing steps and keeps track of progress:
+It works through the preparation steps and keeps track of progress:
 
 ![Workflow progress](docs/images/workflow-progress.png)
 
@@ -39,14 +65,10 @@ At the end, it gives you a clean summary of refunds, carryovers, and filled form
 
 ## What You Get
 
-- Filled PDF forms in `output/`
+- Filled PDF forms ready for you to review and file
 - A summary of federal and state results
 - Any carryover values to save for next year
 - A checklist of what to sign, review, and file
-
-## What We've Learned
-
-Skills are not just a single `.md` file anymore. They can also include scripts, code snippets, and example files, which makes them much more powerful.
 
 ## Contributing
 

@@ -1,44 +1,67 @@
 ---
-name: tax-filing
-description: Prepare and fill federal and state tax return PDF forms. Use this skill whenever the user mentions taxes, tax returns, filing taxes, 1040, W-2, refund, deductions, or wants help with any aspect of preparing or completing their tax return — even if they just say "help me do my taxes."
-user-invocable: true
+name: tax-preparation-cloud
+description: Prepare and fill federal and state tax return PDF forms. Use this skill whenever the user mentions taxes, tax returns, filing taxes, 1040, W-2, refund, deductions, or wants help with any aspect of preparing or completing their tax return — even if they just say "help me do my taxes." Also trigger for questions about tax brackets, deductions, credits, or anything tax-related.
 ---
 
-# Tax Filing Skill
+# Tax Preparation Skill (Claude.ai Edition)
 
 Prepare federal and state income tax returns: read source documents, compute taxes, fill official PDF forms.
 
 **Year-agnostic** — always look up current-year brackets, deductions, and credits. Never reuse prior-year values.
 
+## Claude.ai Environment Setup
+
+This skill is adapted for the Claude.ai computer-use environment. Run these steps **once** at the start of every tax session:
+
+```bash
+# 1. Install PyMuPDF (needed for IRS XFA field discovery)
+pip install PyMuPDF --break-system-packages
+
+# 2. Set up workspace
+mkdir -p /home/claude/tax/source /home/claude/tax/work /home/claude/tax/forms /home/claude/tax/output
+```
+
+**Script location:** All helper scripts live at the skill install path. Reference them as:
+```bash
+SKILL_DIR=$(find /mnt/skills -path "*/tax-preparation-cloud/scripts" -type d 2>/dev/null | head -1)
+```
+
+### Network Constraints
+
+The bash environment **cannot** reach IRS or state tax websites (only allowlisted domains like PyPI and GitHub work). The `web_fetch` tool can reach these sites but returns content into the conversation — it **cannot save binary PDF files to disk**. This means:
+
+- **Tax documents**: User must upload them directly in the chat.
+- **Blank PDF forms**: User must download them from the IRS/state websites and upload them. Claude provides the exact URLs.
+- **Tax instructions and reference data**: Use `web_search` and `web_fetch` to look up brackets, thresholds, and form instructions (text content works fine — it's only binary PDF saving that doesn't work).
+
+### Delivering Final Output
+
+When filled PDFs are ready:
+```bash
+cp /home/claude/tax/output/*.pdf /mnt/user-data/outputs/
+```
+Then use the `present_files` tool to make them downloadable.
+
+---
+
 ## Folder Structure
 
-Organize all work into subfolders of the working directory:
+All work goes under `/home/claude/tax/`:
 
 ```
-working_dir/
-  source/              ← user's source documents (W-2, 1099s, prior return, CSVs)
-  work/                ← ALL intermediate files (extracted data, field maps, computations)
-    tax_data.txt       ← extracted figures from source docs
-    computations.txt   ← all tax math (federal, state, capital gains, rental)
-    f1040_fields.json  ← field discovery dumps (one per form)
+/home/claude/tax/
+  source/              <- user's source documents (W-2, 1099s, prior return, CSVs)
+  work/                <- ALL intermediate files (extracted data, field maps, computations)
+    tax_data.txt       <- extracted figures from source docs
+    computations.txt   <- all tax math (federal, state, capital gains, rental)
+    f1040_fields.json  <- field discovery dumps (one per form)
     f8949_fields.json
     f1040sd_fields.json
-    ca540_fields.json  ← (or equivalent state form)
-    ...                ← add more as needed (Schedule E, Form 4562, Form 1116, etc.)
-    expected_*.json    ← verification expected values
-  forms/               ← blank downloaded PDF forms
-    f1040_blank.pdf
-    f8949_blank.pdf
-    f1040sd_blank.pdf
-    ca540_blank.pdf    ← (or equivalent state form)
-    ...                ← add all applicable forms (Schedule E, A, B, 1-3, 8959, 8960, 4562, etc.)
-  output/              ← final filled PDFs + fill script
-    fill_YEAR.py       ← the fill script
-    f1040_filled.pdf
-    f8949_filled.pdf
-    f1040sd_filled.pdf
-    ca540_filled.pdf   ← (or equivalent state form)
-    ...                ← all filled forms
+    ca540_fields.json  <- (or equivalent state form)
+    expected_*.json    <- verification expected values
+  forms/               <- blank downloaded PDF forms
+  output/              <- final filled PDFs + fill script
+    fill_YEAR.py       <- the fill script
 ```
 
 Create these folders at the start. Keep the working directory clean — no loose files.
@@ -47,7 +70,7 @@ Create these folders at the start. Keep the working directory clean — no loose
 
 These rules prevent context blowouts that cause compaction:
 
-1. **NEVER read PDFs with the Read tool.** Each page becomes ~250KB of base64 images (a 9-page return = 1.8 MB). Extract text instead:
+1. **NEVER read PDFs with the View tool.** Each page becomes ~250KB of base64 images. Extract text instead:
    ```bash
    python3 -c "
    import pdfplumber
@@ -63,11 +86,21 @@ These rules prevent context blowouts that cause compaction:
 
 ### Step 1: Gather Source Documents & Follow Up on Implications
 
-Ask the user what documents they have. Read files from `source/` (move them there if needed). Use pdfplumber for PDFs, Read tool for CSVs. **Also ask for the prior year's tax return** — it contains carryforward items (depreciation schedules, suspended losses, loss carryovers, prior-year overpayments applied).
+**Explicitly ask the user to upload their tax documents.** Say something like: "Please upload your tax documents — W-2s, 1099s, brokerage statements, and your prior year's tax return if you have it. You can attach them right here in the chat." Don't assume files are already present — check `/mnt/user-data/uploads/` and tell the user what you see (and what's missing).
+
+**Sync uploads into the workspace** every time the user provides new documents (not just at the start):
+```bash
+cp /mnt/user-data/uploads/*.pdf /home/claude/tax/source/ 2>/dev/null
+cp /mnt/user-data/uploads/*.csv /home/claude/tax/source/ 2>/dev/null
+ls /home/claude/tax/source/
+```
+Run this each time the user says they've uploaded more files, or at the start of any message where new uploads might be present.
+
+Read files from `source/`. Use pdfplumber for PDFs, view tool for CSVs. **Also ask for the prior year's tax return** — it contains carryforward items (depreciation schedules, suspended losses, loss carryovers, prior-year overpayments applied).
 
 Save all extracted figures to `work/tax_data.txt` immediately — one section per document with every relevant number.
 
-**Follow up on what documents imply.** Each document type may reveal additional filing requirements. Don't just extract numbers — ask what's behind them. Examples:
+**Follow up on what documents imply.** Each document type may reveal additional forms or schedules. Don't just extract numbers — ask what's behind them. Examples:
 
 - **Mortgage statement (1098):** What type of property? Who are the co-borrowers? Ownership percentage? Do you rent out any part? Who makes the payments?
 - **Retirement distribution (1099-R):** What type — rollover, early withdrawal, conversion?
@@ -131,14 +164,14 @@ Save all extracted figures to `work/tax_data.txt` immediately — one section pe
 
 **Do NOT proceed to Step 3 until the user has answered.** "Same as last year" counts as confirmation.
 
-After gathering answers, **validate coverage against the 1040**: download the current year's Form 1040 and Schedules 1–3, scan each line description, and confirm you have information for every applicable line. Flag any gaps back to the user before proceeding.
+After gathering answers, **validate coverage against the 1040**: download the current year's Form 1040 and Schedules 1-3, scan each line description, and confirm you have information for every applicable line. Flag any gaps back to the user before proceeding.
 
 ### Step 3: Look Up Year-Specific Values
 
-**Use authoritative IRS sources, not web search results.** Web searches for "YEAR tax brackets" frequently return the wrong year's values (e.g., searching for "2024 tax brackets" may return 2025 brackets).
+**Use `web_search` and `web_fetch` tools to find authoritative IRS sources.** Do not rely on training data for tax numbers. Web searches for "YEAR tax brackets" frequently return the wrong year's values (e.g., searching for "2024 tax brackets" may return 2025 brackets).
 
 Required approach:
-1. Fetch the IRS Revenue Procedure that sets the tax year's inflation adjustments (e.g., Rev. Proc. 2023-34 for tax year 2024). This is the authoritative source for brackets, standard deduction, and thresholds.
+1. Search for and fetch the IRS Revenue Procedure that sets the tax year's inflation adjustments (e.g., Rev. Proc. 2023-34 for tax year 2024). This is the authoritative source for brackets, standard deduction, and thresholds.
 2. Alternatively, download the 1040 instructions for the tax year and extract values from the Tax Computation Worksheet and Qualified Dividends and Capital Gain Tax Worksheet.
 3. Cross-check: verify that the standard deduction amount matches what's printed on the 1040 form itself.
 4. Do NOT hardcode any thresholds or phase-out amounts — always look them up fresh for the applicable tax year.
@@ -158,19 +191,19 @@ Compute all supporting schedules BEFORE the main 1040, since their results flow 
 **Capital Gains (if applicable):**
 1. Form 8949: individual transactions (Part I short-term, Part II long-term)
 2. Schedule D: totals, loss limitation, carryover calculation (check prior year return for carryovers)
-3. Net gain/loss → 1040 Line 7
+3. Net gain/loss -> 1040 Line 7
 
 **Rental Income (if applicable — Schedule E):**
 1. **Allocate shared expenses** between personal and rental use based on square footage (not a naive unit count). For multi-unit owner-occupied properties: measure the owner's unit vs. total livable area.
 2. **Rental income:** total rents received by unit
-3. **Rental expenses:** mortgage interest (rental portion × ownership %), property tax (rental portion × ownership %), insurance, repairs, utilities, property management, etc.
+3. **Rental expenses:** mortgage interest (rental portion x ownership %), property tax (rental portion x ownership %), insurance, repairs, utilities, property management, etc.
 4. **Depreciation (Form 4562):** carry forward from prior year return, or set up from scratch if new property. Download the Form 4562 instructions and follow them for the applicable depreciation method and recovery period. Improvements/renovations get their own depreciation schedules. Land is not depreciable.
 5. **Net rental income or loss** per property
 6. **Passive activity loss rules:** if net loss, download Form 8582 instructions and determine if the loss is deductible or must be suspended. Check prior year return for suspended losses that may now be usable.
-7. Net result → Schedule 1 → 1040 Line 8
+7. Net result -> Schedule 1 -> 1040 Line 8
 
 **Self-Employment (if applicable — Schedule C):**
-Follow Schedule C instructions. Net result → Schedule 1 → 1040 Line 8, and compute SE tax.
+Follow Schedule C instructions. Net result -> Schedule 1 -> 1040 Line 8, and compute SE tax.
 
 **Foreign Tax Credit (if applicable — Form 1116):**
 Follow Form 1116 instructions for the applicable income category.
@@ -178,20 +211,20 @@ Follow Form 1116 instructions for the applicable income category.
 ### Step 5: Compute Federal Return (Form 1040)
 
 1. Gross Income: W-2 wages (1a) + interest (2b) + dividends (3b) + capital gain/loss (7) + Schedule 1 income (8)
-2. Adjustments → AGI (Line 11)
-3. Deductions → Taxable Income (Line 15)
+2. Adjustments -> AGI (Line 11)
+3. Deductions -> Taxable Income (Line 15)
    - Do NOT ask "standard or itemized?" — compute both and use whichever is larger
    - For mortgage interest: account for property type (personal vs. rental allocation), ownership percentage, and acquisition debt limits
 4. Tax: use QDCG worksheet if qualified dividends/capital gains exist
-5. Credits, other taxes → Total Tax (Line 24)
-6. Payments (withholding, estimated, extension, prior-year applied) → Refund/Owed
+5. Credits, other taxes -> Total Tax (Line 24)
+6. Payments (withholding, estimated, extension, prior-year applied) -> Refund/Owed
 7. If refund: collect direct deposit info (routing, account, type)
 
 Save all line values to `work/computations.txt`.
 
 ### Step 6: Compute State Return
 
-Download the state's tax form AND its instructions for the applicable tax year. Read the instructions to identify:
+Use `web_search` and `web_fetch` to find the state's tax form AND its instructions. Read the instructions to identify:
 - How the state uses federal AGI as a starting point (or not)
 - State-specific adjustments to federal income (additions and subtractions)
 - State conformity issues (areas where the state does not follow federal treatment)
@@ -200,31 +233,47 @@ Download the state's tax form AND its instructions for the applicable tax year. 
 
 Compute the state return by following the form instructions line by line. Do not assume federal treatment carries over — verify each item.
 
-### Step 7: Download Blank PDF Forms
+### Step 7: Obtain Blank PDF Forms
 
-Download all applicable forms to `forms/`. Only download forms that are needed based on the user's situation — don't download forms you won't fill.
+You need the blank PDF forms to discover field names and fill them. In Claude.ai, **bash cannot reach IRS or state tax websites**, and `web_fetch` returns PDF content into the conversation context (it cannot be saved to disk as a binary file). So the user must upload the blank forms.
 
-**IRS**: Use `/irs-prior/` for prior-year forms (`/irs-pdf/` is always current year):
+**Tell the user exactly which forms you need** based on the computations so far. Give them the download URLs so they can grab the forms themselves:
+
+**IRS** — use `/irs-prior/` for prior-year forms (`/irs-pdf/` is always current year):
 ```
 https://www.irs.gov/pub/irs-prior/f1040--YEAR.pdf
 https://www.irs.gov/pub/irs-prior/f8949--YEAR.pdf
 https://www.irs.gov/pub/irs-prior/f1040sd--YEAR.pdf
-...etc — same pattern for all IRS forms (f1040sa, f1040sb, f1040s1, f1116, f8959, f8960, f4562, etc.)
+```
+Same pattern for all IRS forms (f1040sa, f1040sb, f1040s1, f1116, f8959, f8960, f4562, etc.)
+
+**State forms**: Tell the user the state tax authority URL (e.g., `ftb.ca.gov/forms/YEAR/` for CA).
+
+**Example message to the user:**
+> "I need the blank PDF forms to fill in your return. Please download these and upload them here:
+> - Form 1040: https://www.irs.gov/pub/irs-prior/f1040--2024.pdf
+> - Schedule D: https://www.irs.gov/pub/irs-prior/f1040sd--2024.pdf
+> - (etc.)"
+
+Once uploaded, sync them into the workspace:
+```bash
+cp /mnt/user-data/uploads/*.pdf /home/claude/tax/forms/
+ls /home/claude/tax/forms/
 ```
 
-**State forms**: Find the state tax authority's website and download the applicable year's forms.
-
-Verify each download has `%PDF-` header (not an HTML error page).
+Verify each file has a `%PDF-` header (not an HTML error page).
 
 ### Step 8: Discover Field Names & Fill Forms
 
 #### Discovery — ONCE per form, use `--compact`
 
 ```bash
-python scripts/discover_fields.py forms/f1040_blank.pdf --compact > work/f1040_fields.json
-python scripts/discover_fields.py forms/f8949_blank.pdf --compact > work/f8949_fields.json
-python scripts/discover_fields.py forms/f1040sd_blank.pdf --compact > work/f1040sd_fields.json
-python scripts/discover_fields.py forms/ca540_blank.pdf --compact > work/ca540_fields.json
+SKILL_DIR=$(find /mnt/skills -path "*/tax-preparation-cloud/scripts" -type d 2>/dev/null | head -1)
+cd /home/claude/tax
+
+python "$SKILL_DIR/discover_fields.py" forms/f1040_blank.pdf --compact > work/f1040_fields.json
+python "$SKILL_DIR/discover_fields.py" forms/f8949_blank.pdf --compact > work/f8949_fields.json
+# ...repeat for each form
 ```
 
 `--compact` outputs a minimal `{field_name: description}` mapping — each field name is paired with its tooltip/speak description so you can map line numbers to field names directly without manual inspection. Radio buttons include their option values (e.g. `{"/2": "Single", "/1": "MFJ"}`).
@@ -235,7 +284,14 @@ Do NOT use `--search` repeatedly or `--json` (which dumps raw metadata and waste
 
 #### Fill Script
 
-Write `output/fill_YEAR.py` using `scripts/fill_forms.py`:
+Write `output/fill_YEAR.py` importing from the skill scripts:
+
+```python
+import sys
+SKILL_DIR = "..."  # result of find command above
+sys.path.insert(0, SKILL_DIR)
+from fill_forms import fill_pdf, fill_irs_pdf, add_suffix
+```
 
 - **`add_suffix(d)`** — appends `[0]` to text field keys. Required for IRS forms.
 - **`fill_irs_pdf(in, out, fields, checkboxes, radio_values)`** — IRS forms. `radio_values` for filing status, yes/no, checking/savings.
@@ -246,7 +302,7 @@ Output filled PDFs to `output/`.
 ### Step 9: Verify Filled Forms
 
 ```bash
-python scripts/verify_filled.py output/f1040_filled.pdf work/expected_f1040.json
+python "$SKILL_DIR/verify_filled.py" output/f1040_filled.pdf work/expected_f1040.json
 ```
 
 Fix any failures, re-run fill script.
@@ -270,18 +326,30 @@ Show a summary table, verification checklist, capital loss carryover (if any), t
 - **Sign your returns** — unsigned returns are rejected
 - **Payment instructions** (if owed) — IRS Direct Pay, FTB Web Pay, deadline April 15
 - **Direct deposit** — recommend it for refunds; ask for bank info if not provided
-- **Filing options** — e-file (Free File, CalFile) or mailing addresses
+- **How to file** — e-file (Free File, CalFile) or mailing addresses
+
+**Deliver the files:**
+```bash
+cp /home/claude/tax/output/*.pdf /mnt/user-data/outputs/
+```
+Then use the `present_files` tool to share all filled PDFs with the user.
 
 ## Key Gotchas
 
 ### Context
-- NEVER use Read tool on PDFs — use pdfplumber
+- NEVER use View tool on PDFs — use pdfplumber
 - NEVER read same document twice — save to `work/tax_data.txt`
 - Field discovery once per form with `--compact` — no `--json` (wastes context), no repeated `--search`
 
+### Environment (Claude.ai specific)
+- Install PyMuPDF at start: `pip install PyMuPDF --break-system-packages`
+- Use `web_fetch` tool (not curl/wget) to download forms from IRS/state sites
+- All work in `/home/claude/tax/` — final output to `/mnt/user-data/outputs/`
+- Locate scripts: `find /mnt/skills -path "*/tax-preparation-cloud/scripts" -type d`
+
 ### Field Discovery
 - Field names change between years — always discover fresh
-- XFA template is in `/AcroForm` → `/XFA` array, NOT from brute-force xref scanning
+- XFA template is in `/AcroForm` -> `/XFA` array, NOT from brute-force xref scanning
 - Do NOT use `xml.etree` for XFA — use regex (IRS XML has broken namespaces)
 
 ### PDF Filling

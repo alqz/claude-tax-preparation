@@ -1,9 +1,9 @@
 {
-  "name": "tax-filing",
-  "description": "Prepare and fill federal and state tax return PDF forms",
+  "name": "tax-preparation",
+  "description": "Prepare federal and state tax returns and fill official PDF forms",
   "version": "1.0.0",
   "author": {
     "name": "alqz"
   },
-  "repository": "https://github.com/alqz/claude-tax-filing"
+  "repository": "https://github.com/alqz/claude-tax-preparation"
 }
