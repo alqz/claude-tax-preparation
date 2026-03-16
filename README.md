@@ -15,7 +15,7 @@ This Skill helps Claude turn a folder of tax documents into a mostly-complete fi
 You have two easy options:
 
 1. Upload `tax-filing-skill.zip` to Claude as a Skill.
-2. Or just ask Claude to use the Skill at [github.com/robbalian/claude-tax-filing](https://github.com/robbalian/claude-tax-filing).
+2. Or just ask Claude to use the Skill at [github.com/alqz/claude-tax-filing](https://github.com/alqz/claude-tax-filing).
 
 Then point Claude at your tax documents folder and say something like:
 
@@ -54,4 +54,4 @@ Skills are not just a single `.md` file anymore. They can also include scripts, 
 
 ## Contributing
 
-Contributions are welcome via PR.
+This is a fork of [robbalian/claude-tax-filing](https://github.com/robbalian/claude-tax-filing). Contributions are welcome via PR.

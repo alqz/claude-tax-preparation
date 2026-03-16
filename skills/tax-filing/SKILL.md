@@ -1,6 +1,6 @@
 ---
 name: tax-filing
-description: Prepare and fill federal and state tax return PDF forms
+description: Prepare and fill federal and state tax return PDF forms. Use this skill whenever the user mentions taxes, tax returns, filing taxes, 1040, W-2, refund, deductions, or wants help with any aspect of preparing or completing their tax return — even if they just say "help me do my taxes."
 user-invocable: true
 ---
 
