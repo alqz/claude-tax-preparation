@@ -12,15 +12,11 @@ This Skill helps Claude turn a folder of tax documents into a mostly-complete fi
 
 ## Installation
 
-You have two easy options:
+In Claude Code:
 
-1. Upload `tax-filing-skill.zip` to Claude as a Skill.
-2. Or just ask Claude to use the Skill at [github.com/alqz/claude-tax-filing](https://github.com/alqz/claude-tax-filing).
-
-Then point Claude at your tax documents folder and say something like:
-
-```text
-Do my taxes using this Skill.
+```
+/plugin marketplace add alqz/claude-tax-filing
+/plugin install tax-filing
 ```
 
 ## What It Looks Like
