@@ -1,5 +1,11 @@
 # Tax Preparation Skill for Claude
 
+Just tell Claude:
+
+```text
+Install and use https://github.com/alqz/claude-tax-preparation
+```
+
 This Skill helps Claude prepare your tax return: read the source docs, compute the return, fill the official PDF forms, and hand back a clear summary of what to review before you file.
 
 Works in both **Claude Code** and **Claude.ai**.
@@ -14,13 +20,6 @@ Works in both **Claude Code** and **Claude.ai**.
 
 ## Installation
 
-### Claude Code
-
-```
-/plugin marketplace add alqz/claude-tax-preparation
-/plugin install tax-preparation
-```
-
 ### Claude.ai
 
 1. Download `tax-preparation-cloud.skill` from the [latest release](https://github.com/alqz/claude-tax-preparation/releases).
@@ -34,16 +33,23 @@ Help me do my taxes.
 
 Claude will ask you to upload your tax documents (W-2s, 1099s, etc.) directly in the chat. It will also ask you to download and upload the blank IRS/state forms it needs to fill — it gives you the exact URLs.
 
+### Claude Code
+
+```
+/plugin marketplace add alqz/claude-tax-preparation
+/plugin install tax-preparation
+```
+
 ### Differences Between Versions
 
 The tax computation logic is identical. The differences are purely about how Claude interacts with the environment:
 
-| | Claude Code (`/tax-preparation`) | Claude.ai (`/tax-preparation-cloud`) |
+| | Claude.ai (`/tax-preparation-cloud`) | Claude Code (`/tax-preparation`) |
 |---|---|---|
-| **Tax documents** | Reads from your local filesystem | You upload them in the chat |
-| **Blank IRS forms** | Claude downloads them directly | You download and upload them (Claude gives you the URLs) |
-| **Filled forms** | Saved to `output/` in your project | Downloadable from the chat |
-| **Web lookups** | CLI-based | Uses built-in web search tools |
+| **Tax documents** | You upload them in the chat | Reads from your local filesystem |
+| **Blank IRS forms** | You download and upload them (Claude gives you the URLs) | Claude downloads them directly |
+| **Filled forms** | Downloadable from the chat | Saved to `output/` in your project |
+| **Web lookups** | Uses built-in web search tools | CLI-based |
 
 ## What It Looks Like
 
