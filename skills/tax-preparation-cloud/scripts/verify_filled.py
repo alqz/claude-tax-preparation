@@ -72,13 +72,21 @@ def verify(pdf_path, expected):
             if t in check_expected:
                 check_found[t] = as_val
 
-            # Radio buttons — match by parent /T
+            # Radio buttons — match by parent /T (non-IRS forms)
             parent_ref = obj.get("/Parent")
             if parent_ref:
                 pobj = parent_ref.get_object()
                 pname = str(pobj.get("/T", ""))
                 if pname in radio_expected and as_val not in ("", "None", "/Off"):
                     radio_found[pname] = as_val
+
+            # Radio buttons — match by annotation /T prefix (IRS forms)
+            # IRS radio annotations have /T like "c1_3[0]", "c1_3[1]" etc.
+            # and the expected key is the prefix "c1_3".
+            for rkey in radio_expected:
+                if t.startswith(rkey + "[") or t == rkey:
+                    if as_val not in ("", "None", "/Off"):
+                        radio_found[rkey] = as_val
 
     results = []
     ok = 0

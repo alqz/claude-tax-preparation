@@ -227,11 +227,11 @@ def _set_check_value(annot, val):
         })
 
 
-def _get_full_name(annot):
+def _get_full_name(annot, max_depth=100):
     """Get full field name by walking the /Parent chain."""
     parts = []
     obj = annot
-    while obj:
+    for _ in range(max_depth):
         t = obj.get("/T", "")
         if t:
             parts.insert(0, str(t))

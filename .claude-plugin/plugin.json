@@ -1,8 +1,9 @@
 {
-  "name": "tax-filing",
-  "description": "Prepare federal (IRS) and state (CA) income tax returns — extracts data from W-2s, 1099s, and brokerage CSVs, computes taxes, and fills official PDF forms.",
+  "name": "tax-preparation",
+  "description": "Prepare federal and state tax returns and fill official PDF forms",
   "version": "1.0.0",
   "author": {
-    "name": "Rob Balian"
-  }
+    "name": "alqz"
+  },
+  "repository": "https://github.com/alqz/claude-tax-preparation"
 }

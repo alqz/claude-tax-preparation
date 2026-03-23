@@ -1,0 +1,13 @@
+{
+  "name": "alqz-claude-tax-preparation",
+  "owner": {
+    "name": "alqz"
+  },
+  "plugins": [
+    {
+      "name": "tax-preparation",
+      "source": ".",
+      "description": "Prepare federal and state tax returns and fill official PDF forms"
+    }
+  ]
+}
